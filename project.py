@@ -3,27 +3,37 @@ import psycopg2
 import numpy as np
 from scipy.stats import entropy
 
-f = ['sum','max', 'min', 'avg', 'count']
-a = ['workclass',
-     'education'
-     'occupation',
-     'relationship',
-     'race',
-     'sex',
-     'native_country',
-     'salary']
-m = []
+from utils import distance
+
+DEC2FLOAT = psycopg2.extensions.new_type(
+    psycopg2.extensions.DECIMAL.values,
+    'DEC2FLOAT',
+    lambda value, curs: float(value) if value is not None else None)
+psycopg2.extensions.register_type(DEC2FLOAT)
+
+
+aggregation_functions = ['sum','max', 'min', 'avg', 'count']
+group_by_columns = [
+    'workclass',
+    'education',
+    'occupation',
+    'relationship',
+    'race',
+    'sex',
+    'native_country',
+    'salary'
+]
+aggregation_columns = [
+    'age',
+    'fnlwgt',
+    'education_num',
+    'capital_gain',
+    'capital_loss',
+    'hours_per_week'
+]
+
 #target = ['Married-civ-spouse','Married-spouse-absent','Marries-AF-spouse']
 # Let reference be complement on target.
-
-
-def kldiv(tgt,ref):
-    tgt_val = np.asarray([float(x[1]) for x in tgt])
-    ref_val = np.asarray([float(x[1]) for x in ref])
-    tgt_val /= np.sum(tgt_val)
-    ref_val /= np.sum(ref_val)
-    return entropy(tgt_val,ref_val)
-
 
 
 def create_adult_table(conn, cur):
@@ -74,24 +84,49 @@ def create_ref_tgt_views(conn, cur):
     conn.commit()
 
 def find_kld_sex_age(cur):
-    cur.execute("select sex,count(age) from target group by sex;")
+    cur.execute("select sex, avg(age) from target group by sex;")
     tgt = cur.fetchall()
     #Sample Query for Reference
-    cur.execute("select sex,count(age) from reference group by sex;")
+    cur.execute("select sex, avg(age) from reference group by sex;")
     ref = cur.fetchall()
     #K-L Divergence value
-    print(kldiv(tgt,ref))
+    print "KLD:", distance(tgt, ref)
+    print "EMD:", distance(tgt, ref, measure='emd')
 
 
 if __name__ == "__main__":
     conn = psycopg2.connect("dbname=census")
     cur = conn.cursor()
 
-    create_adult_table(conn, cur)
-    create_ref_tgt_views(conn, cur)
+    #create_adult_table(conn, cur)
+    #create_ref_tgt_views(conn, cur)
 
+    query = "select {group}, {func}({agg_col}) from {table} group by {group};"
+    for group in group_by_columns:
+        for agg_col in aggregation_columns:
+            for func in aggregation_functions:
+                target_query = query.format(group=group,
+                                            func=func,
+                                            agg_col=agg_col,
+                                            table='target')
 
-    find_kld_sex_age(cur)
+                cur.execute(target_query)
+                target_results = cur.fetchall()
+
+                reference_query = query.format(group=group,
+                                               func=func,
+                                               agg_col=agg_col,
+                                               table='reference')
+                cur.execute(reference_query)
+                reference_results = cur.fetchall()
+
+                try:
+                    print "({}, {}, {})".format(group, func, agg_col), distance(target_results, reference_results)
+                except ValueError:
+                    print group, func, agg_col
+                    print dict(target_results)
+                    print dict(reference_results)
+                    exit()
 
 
     conn.commit()
