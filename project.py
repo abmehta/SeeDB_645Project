@@ -3,7 +3,7 @@ import psycopg2
 import numpy as np
 from scipy.stats import entropy
 
-from utils import distance
+from utils import *
 
 
 aggregation_functions = ['sum','max', 'min', 'avg', 'count']
@@ -90,47 +90,85 @@ def find_kld_sex_age(cur):
     print "KLD:", distance(tgt, ref)
     print "EMD:", distance(tgt, ref, measure='emd')
 
-def naive_search(grouping_columns, measure_columns, aggregation_functions, top_k=5, measure='kld', verbose=True):
+def naive_search(list_of_views, top_k=5, measure='kld', verbose=True):
 
-    query = "select {group}, {func}({m_col}) from {table} group by {group};"
+    grouped_views = group_views_by_grouping_column(list_of_views)
+
+    query = "select {group}, {func}({m_col}) from {table} where id < 5000 group by {group};"
     results = list()
-    for group in group_by_columns:
-        for m_col in measure_columns:
-            for func in aggregation_functions:
-                target_query = query.format(group=group,
-                                            func=func,
-                                            m_col=m_col,
-                                            table='target')
+    for group, views in grouped_views.items():
+        for view in views:
+            _, func, m_col = view
+            target_query = query.format(group=group,
+                                        func=func,
+                                        m_col=m_col,
+                                        table='target')
 
-                cur.execute(target_query)
-                target_results = cur.fetchall()
+            cur.execute(target_query)
+            target_results = cur.fetchall()
 
-                reference_query = query.format(group=group,
-                                               func=func,
-                                               m_col=m_col,
-                                               table='reference')
-                cur.execute(reference_query)
-                reference_results = cur.fetchall()
+            reference_query = query.format(group=group,
+                                           func=func,
+                                           m_col=m_col,
+                                           table='reference')
+            cur.execute(reference_query)
+            reference_results = cur.fetchall()
 
-                dist = distance(target_results, reference_results)
-                results.append(((group, func, m_col), dist))
+            dist = distance(target_results, reference_results)
+            results.append((view, dist))
 
-                if verbose:
-                    print "({}, {}, {})".format(group, func, m_col), dist
+            if verbose:
+                print "({}, {}, {})".format(group, func, m_col), dist
 
     return list(reversed(sorted(results, key=lambda x: x[1])))[:top_k]
 
+
+def sharing_based_search(list_of_views, top_k=5, measure='kld', verbose=True):
+
+    grouped_views = group_views_by_grouping_column(list_of_views)
+
+    query = "select {group} {aggregated_measures} from {table}  group by {group};"
+
+    results = list()
+    for group, views in grouped_views.items():
+
+        q_string = "".join(", {func}({m_col})".format(func=func, m_col=m_col) for _, func, m_col in views)
+
+        target_query = query.format(group=group, aggregated_measures=q_string, table='target')
+        cur.execute(target_query)
+        t_v = cur.fetchall()
+
+        reference_query = query.format(group=group, aggregated_measures=q_string, table='reference')
+        cur.execute(reference_query)
+        r_v = cur.fetchall()
+
+        for i, view in enumerate(views):
+            target_results = [(v[0], v[i+1]) for v in t_v]
+            reference_results = [(v[0], v[i+1]) for v in r_v]
+
+            dist = distance(target_results, reference_results, measure=measure)
+            if verbose:
+                print view, dist
+            results.append((view, dist))
+
+
+    return list(reversed(sorted(results, key=lambda x: x[1])))[:top_k]
 
 if __name__ == "__main__":
     conn = psycopg2.connect("dbname=census")
     cur = conn.cursor()
 
-    create_adult_table(conn, cur)
-    create_ref_tgt_views(conn, cur)
-    conn.commit()
+    #create_adult_table(conn, cur)
+    #create_ref_tgt_views(conn, cur)
+    #conn.commit()
 
 
-    naive_search(group_by_columns, measure_columns, aggregation_functions)
+    init_list = create_initial_list_of_views(group_by_columns, measure_columns, aggregation_functions)
+    top_5_kld_sharing = sharing_based_search(init_list, verbose=True, measure='emd')
+
+    for view in top_5_kld_sharing:
+        print view
+
 
     cur.close()
     conn.close()
