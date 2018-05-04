@@ -100,8 +100,11 @@ if __name__ == "__main__":
 
     #create_adult_table(conn, cur)
     #create_ref_tgt_views(conn, cur)
+    #conn.commit()
+
 
     query = "select {group}, {func}({agg_col}) from {table} group by {group};"
+    results = list()
     for group in group_by_columns:
         for agg_col in aggregation_columns:
             for func in aggregation_functions:
@@ -120,15 +123,21 @@ if __name__ == "__main__":
                 cur.execute(reference_query)
                 reference_results = cur.fetchall()
 
-                try:
-                    print "({}, {}, {})".format(group, func, agg_col), distance(target_results, reference_results)
-                except ValueError:
-                    print group, func, agg_col
-                    print dict(target_results)
-                    print dict(reference_results)
-                    exit()
+                kld = distance(target_results, reference_results)
+                emd = distance(target_results, reference_results, measure='emd')
+                results.append(((group, func, agg_col), kld, emd))
+                print "({}, {}, {})".format(group, func, agg_col), kld, emd
 
 
-    conn.commit()
+    from pprint import pprint
+
+    print "Top ten KLD:"
+    kld_sorted = list(reversed(sorted(results, key=lambda x: x[1])))
+    pprint(kld_sorted[:10])
+    print
+    print "Top ten EMD:"
+    emd_sorted = list(reversed(sorted(results, key=lambda x: x[2])))
+    pprint(emd_sorted[:10])
+
     cur.close()
     conn.close()

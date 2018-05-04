@@ -2,7 +2,7 @@ import psycopg2
 import numpy as np
 from scipy.stats import entropy, wasserstein_distance
 
-
+eps = np.finfo(float).eps
 
 def distance(target, reference, measure='kld'):
 
@@ -11,14 +11,22 @@ def distance(target, reference, measure='kld'):
 
     t = list()
     r = list()
+
+    # we need this because this ensures that there are the same number of categories in each distribution
     for key in set().union(target.keys(), reference.keys()):
-        t_val = target.get(key) if target.get(key) > 0 else np.finfo(float).eps
-        r_val = reference.get(key) if reference.get(key) > 0 else np.finfo(float).eps
+        t_val = float(target.get(key, 0))
+        r_val = float(reference.get(key, 0))
         t.append(t_val)
         r.append(r_val)
 
+
+    # normalize to create a probability distribution
+    t = np.asarray(t) / (np.sum(t) or 1.0)
+    r = np.asarray(r) / (np.sum(r) or 1.0)
+    t = [max(x, eps) for x in t]
+    r = [max(x, eps) for x in r]
     if measure == 'kld':
-        return kld(t, r)
+        return kl_divergence(t, r)
 
     elif measure == 'emd':
         return earth_movers_distance(t, r)
@@ -26,13 +34,9 @@ def distance(target, reference, measure='kld'):
     else:
         print "Warning! You must choose a distance measure (kl-divergence or earth movers distance)"
 
-def kld(target, reference):
-    #tgt_val = [float(x[1]) if x[1] > 0 else np.finfo(float).eps for x in target]
-    #ref_val = [float(x[1]) if x[1] > 0 else np.finfo(float).eps for x in reference]
+def kl_divergence(target, reference):
     return entropy(target,reference)
 
 def earth_movers_distance(target, reference):
-    t = [float(x[1]) for x in target]
-    r = [float(x[1]) for x in reference]
-    return wasserstein_distance(t, r)
+    return wasserstein_distance(target, reference)
 
