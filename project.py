@@ -31,14 +31,14 @@ def create_adult_table(conn, cur):
    conn.commit()
 
 
-def create_ref_tgt_views(conn, cur)
+def create_ref_tgt_views(conn, cur):
    #Create Target table
    cur.execute("DROP VIEW IF EXISTS Target;")
    cur.execute("CREATE VIEW Target AS SELECT * FROM Adult WHERE to_tsvector('english',marital_status) @@ to_tsquery('english','married & !never-married');")
    #Create Reference table (Complement of Target)
    cur.execute("DROP VIEW IF EXISTS Reference;")
    #Sample Query for Target
-   cur.execute("CREATE TABLE Reference AS SELECT * FROM Adult WHERE to_tsvector('english',marital_status) @@ to_tsquery('english','!married | never-married');")
+   cur.execute("CREATE VIEW Reference AS SELECT * FROM Adult WHERE to_tsvector('english',marital_status) @@ to_tsquery('english','!married | never-married');")
 
    conn.commit()
 
@@ -55,6 +55,10 @@ def find_kld_sex_age(cur):
 if __name__ == "__main__":
    conn = psycopg2.connect("dbname=final_project")
    cur = conn.cursor()
+
+   create_adult_table(conn, cur)
+   create_ref_tgt_views(conn, cur)
+
 
    find_kld_sex_age(cur)
 
