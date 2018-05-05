@@ -1,6 +1,8 @@
 \documentclass{article}
 \usepackage{graphicx}
 \usepackage{placeins}
+\usepackage{hyperref}
+
 
 \title{Mini-Project 3: SeeDB}
 \author{Anushree Mehta, Benjamin Mende, Ramya Tammisetti }
@@ -16,7 +18,7 @@ For this project, we implemented several algorithms outlined in \textit{SeeDB: E
 We tested our simplified reproduction of SeeDB with the US Census Income Dataset, which is divided into a training and test set. Because this split is not relevant to SeeDB, we have opted to combine these into a single dataset. While the authors of SeeDB did conduct experiments using this dataset, we do not expect to find the same results because they reported this data as having only 21,000 rows while we have a version with 48,000.
 
 \section{Tools}
-We used a combination of PostgreSQL and Python in our implementation, executed using Psycopg2, a DB API 2.0 compliant PostgreSQL driver that is actively developed. Scipy and Matplotlib were used to compute utility measures and for visualization respectively.
+We used a combination of PostgreSQL and Python in our implementation, executed using Psycopg2, a DB API 2.0 compliant PostgreSQL driver that is actively developed. Scipy and Matplotlib were used to compute utility measures and for visualization respectively. Additionally, all our code and implementation is hosted on github at \url{https://github.com/abmehta/SeeDB\_645Project}
 
 \section{Methods}
 \subsection{Target and Reference Data}
