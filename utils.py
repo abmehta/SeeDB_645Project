@@ -26,6 +26,8 @@ def distance(target, reference, measure='kld'):
     r = np.asarray(r) / (np.sum(r) or 1.0)
     t = [max(x, eps) for x in t]
     r = [max(x, eps) for x in r]
+
+
     if measure == 'kld':
         return kl_divergence(t, r)
 

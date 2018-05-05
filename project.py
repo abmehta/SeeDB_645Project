@@ -80,7 +80,7 @@ def create_ref_tgt_views(conn, cur):
 
     conn.commit()
 
-def naive_search(cur, list_of_views, limits=None, top_k=5, measure='kld', verbose=True):
+def naive_search(cur, list_of_views, limits=None, top_k=5, measure='kld', verbose=False):
 
     grouped_views = group_views_by_grouping_column(list_of_views)
 
@@ -122,7 +122,7 @@ def naive_search(cur, list_of_views, limits=None, top_k=5, measure='kld', verbos
     return list(reversed(sorted(results, key=lambda x: x[1])))[:top_k]
 
 
-def sharing_based_search(cur, list_of_views, limits=None, top_k=5, measure='kld', verbose=True):
+def sharing_based_search(cur, list_of_views, limits=None, top_k=5, measure='kld', verbose=False):
 
     grouped_views = group_views_by_grouping_column(list_of_views)
 
@@ -165,17 +165,58 @@ def sharing_based_search(cur, list_of_views, limits=None, top_k=5, measure='kld'
 
     return list(reversed(sorted(results, key=lambda x: x[1])))[:top_k]
 
-def pruning_based_search(cur, list_of_views, search_method, num_partitions=10, top_k=5, measure='kld'):
+def pruning_based_search(cur, list_of_views, search_method, num_partitions=10, top_k=5, measure='kld', verbose=False):
 
     cur.execute('select max(id) from adult;')
     max_id = cur.fetchall()[0][0]
 
-    partition_size = max_id / num_partitions
+    partition_size = 1 + max_id / num_partitions
+
+    current_views = list_of_views[:]
+
+    mean_estimated_utility = dict()
 
     for i in range(num_partitions):
+        l_bound = i*partition_size
+        u_bound = l_bound + partition_size
 
-        epsilon_m = hoeffding_serfling_interval(i+1, num_partitions, 0.05)
-        print i, epsilon_m
+        # this returns the results in sorted order!
+        results = search_method(cur, current_views, limits=(l_bound, u_bound), top_k=None, measure=measure)
+
+        for view, utility in results:
+            prev_mean = mean_estimated_utility.get(view, 0.0)
+            mean_estimated_utility[view] = (i * prev_mean + utility) / (i + 1)
+
+        sorted_utilities = sorted([mean_estimated_utility[view] for view in current_views])
+
+        max_utility = sorted_utilities[-1]
+        kth_utility = sorted_utilities[-top_k] / max_utility
+
+        if i == 0:
+            if verbose:
+                print "We dont want to cull anything on the first iteration because epsilon is NaN"
+            continue
+
+
+        epsilon_m = hoeffding_serfling_interval(i+1, num_partitions, 0.1)
+        not_pruned_views = list()
+
+        for view in current_views:
+            est_util = mean_estimated_utility[view] / max_utility
+            if (est_util + epsilon_m) >= (kth_utility - epsilon_m):
+                not_pruned_views.append(view)
+
+        culled = len(current_views) - len(not_pruned_views)
+
+        if verbose:
+            print "On iterated %d we pruned %d views." % (i, culled)
+
+        current_views = not_pruned_views[:]
+
+    if verbose:
+        print "we finished with %d views." % len(current_views)
+    return search_method(cur, current_views, top_k=top_k, measure=measure)
+
 
 
 
@@ -183,19 +224,20 @@ if __name__ == "__main__":
     connection = psycopg2.connect("dbname=census")
     cursor = connection.cursor()
 
-    #create_adult_table(connection, cur)
-    #create_ref_tgt_views(connection, cur)
+    #create_adult_table(connection, cursor)
+    #create_ref_tgt_views(connection, cursor)
     #connection.commit()
 
 
     init_list = create_initial_list_of_views(group_by_columns, measure_columns, aggregation_functions)
 
-    pruning_based_search(cursor, init_list, sharing_based_search)
 
-    #top_5_kld_sharing = sharing_based_search(cursor, init_list, verbose=True, measure='kld')
+    top_5 = pruning_based_search(cursor, init_list, sharing_based_search, measure='kld')
 
-    #for view in top_5_kld_sharing:
-    #    print view
+    #top_5 = sharing_based_search(cursor, init_list, verbose=False, measure='kld')
+
+    for view in top_5:
+        print view
 
 
     connection.commit() # close the transaction on the database
