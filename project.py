@@ -58,6 +58,7 @@ def create_adult_table(conn, cur):
     with open('adult.csv','r') as f:
        cur.copy_from(f,'adult',sep=',')
 
+    #Add primary key
     cur.execute("alter table adult add column id serial primary key;")
 
     conn.commit()
@@ -73,7 +74,6 @@ def create_ref_tgt_views(conn, cur):
     """)
     #Create Reference table (Complement of Target)
     cur.execute("DROP VIEW IF EXISTS Reference;")
-    #Sample Query for Target
     cur.execute("""
         CREATE VIEW Reference AS
         SELECT * FROM Adult
@@ -83,6 +83,9 @@ def create_ref_tgt_views(conn, cur):
     conn.commit()
 
 def naive_search(cur, list_of_views, limits=None, top_k=5, measure='kld', verbose=False):
+    '''
+    Exhaustively iterate over all combinations of triplets and query the database
+    '''
 
     grouped_views = group_views_by_grouping_column(list_of_views)
 
@@ -125,6 +128,9 @@ def naive_search(cur, list_of_views, limits=None, top_k=5, measure='kld', verbos
 
 
 def sharing_based_search(cur, list_of_views, limits=None, top_k=5, measure='kld', verbose=False):
+    '''
+    Apply Sharing optimizations by grouping multiple aggrerations within the same query
+    '''
 
     grouped_views = group_views_by_grouping_column(list_of_views)
 
@@ -168,6 +174,9 @@ def sharing_based_search(cur, list_of_views, limits=None, top_k=5, measure='kld'
     return list(reversed(sorted(results, key=lambda x: x[1])))[:top_k]
 
 def pruning_based_search(cur, list_of_views, search_method, num_partitions=15, top_k=5, measure='kld', verbose=False):
+    '''
+    Apply pruning optimizations based on Confidence Intervals derived from Hoeffding-Serfling inequality
+    '''
 
     cur.execute('select max(id) from adult;')
     max_id = cur.fetchall()[0][0]
