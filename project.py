@@ -3,10 +3,12 @@ import psycopg2
 import numpy as np
 from scipy.stats import entropy
 
+import matplotlib.pyplot as plt
+
 from utils import *
 
 
-aggregation_functions = ['sum','max', 'min', 'avg', 'count']
+aggregation_functions = ['avg', 'sum', 'max', 'min', 'count']
 group_by_columns = [
     'workclass',
     'education',
@@ -165,7 +167,7 @@ def sharing_based_search(cur, list_of_views, limits=None, top_k=5, measure='kld'
 
     return list(reversed(sorted(results, key=lambda x: x[1])))[:top_k]
 
-def pruning_based_search(cur, list_of_views, search_method, num_partitions=10, top_k=5, measure='kld', verbose=False):
+def pruning_based_search(cur, list_of_views, search_method, num_partitions=15, top_k=5, measure='kld', verbose=False):
 
     cur.execute('select max(id) from adult;')
     max_id = cur.fetchall()[0][0]
@@ -215,6 +217,8 @@ def pruning_based_search(cur, list_of_views, search_method, num_partitions=10, t
 
     if verbose:
         print "we finished with %d views." % len(current_views)
+
+
     return search_method(cur, current_views, top_k=top_k, measure=measure)
 
 
@@ -231,13 +235,57 @@ if __name__ == "__main__":
 
     init_list = create_initial_list_of_views(group_by_columns, measure_columns, aggregation_functions)
 
+    measure = 'kld'
 
-    top_5 = pruning_based_search(cursor, init_list, sharing_based_search, measure='kld')
 
-    #top_5 = sharing_based_search(cursor, init_list, verbose=False, measure='kld')
+    for i in range(1):
+        top_5 = pruning_based_search(cursor, init_list, sharing_based_search, measure=measure, verbose=True)
 
-    for view in top_5:
-        print view
+        #top_5 = sharing_based_search(cursor, init_list, verbose=False, measure=measure)
+
+    for view, utility in top_5:
+        print view, utility
+
+        cursor.execute("select {g}, {f}({m}) from target group by {g};".format(g=view[0], f=view[1], m=view[2]))
+        target = dict(cursor.fetchall())
+
+        cursor.execute("select {g}, {f}({m}) from reference group by {g};".format(g=view[0], f=view[1], m=view[2]))
+        reference = dict(cursor.fetchall())
+
+        t = list()
+        r = list()
+        names = list()
+
+        # we need this because this ensures that there are the same number of categories in each distribution
+        for key in set().union(target.keys(), reference.keys()):
+            names.append(key)
+            t_val = float(target.get(key, 0))
+            r_val = float(reference.get(key, 0))
+            t.append(t_val)
+            r.append(r_val)
+
+        fig, ax = plt.subplots()
+
+        width=0.35
+        index = np.arange(len(names))
+
+        t_bar = ax.bar(index, t, width, color='r')
+
+        r_bar = ax.bar(index+width, r, width, color='b')
+
+        ax.set_title("{f}({m}) grouped by {g} ({measure} = {util})".format(f=view[1],
+                                                                           m=view[2],
+                                                                           g=view[0],
+                                                                           measure=measure,
+                                                                           util=utility))
+        ax.set_ylabel("{f}({m})".format(f=view[1], m=view[2]))
+        ax.set_xticks(index + width/2)
+        ax.set_xticklabels(names)
+        ax.legend((t_bar[0], r_bar[0]), ('Married', 'Unmarried'))
+
+    plt.show()
+
+
 
 
     connection.commit() # close the transaction on the database
