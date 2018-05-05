@@ -3,7 +3,7 @@ import numpy as np
 from scipy.stats import entropy, wasserstein_distance
 from itertools import product
 
-eps = np.finfo(float).eps
+eps = np.finfo(float).eps # smallest float such that 1.0 + eps != 1.0
 
 def distance(target, reference, measure='kld'):
 
@@ -57,3 +57,15 @@ def group_views_by_grouping_column(views_in_the_running):
             grouped_views[grouper] = [view]
 
     return grouped_views
+
+
+def hoeffding_serfling_interval(phase, num_phases, delta):
+
+    phase = float(phase)
+    num_phases = float(phase)
+
+    numerator = (1 - ((phase - 1)/num_phases))*(2*np.log(np.log(phase)) + np.log((np.pi*np.pi) / (3*delta)))
+
+    epsilon_m = np.sqrt(numerator / (2 * phase))
+
+    return epsilon_m
